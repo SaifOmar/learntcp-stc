@@ -1,0 +1,66 @@
+{
+  "course": "build-tcp-ip",
+  "language": "go",
+  "language_id": 60,
+  "entrypoint": "main.go",
+  "version": 1,
+  "content_hash": "a08a37754a37635b",
+  "lessons": [
+    {
+      "slug": "layered-model",
+      "tests_hash": "1a2ad0fdee37"
+    },
+    {
+      "slug": "ipv4-header",
+      "tests_hash": "e6d145912c29"
+    },
+    {
+      "slug": "tun-tap",
+      "tests_hash": "436893038f7a"
+    },
+    {
+      "slug": "arp",
+      "tests_hash": "c725ab63a4fd"
+    },
+    {
+      "slug": "icmp-echo",
+      "tests_hash": "d907c07a26b1"
+    },
+    {
+      "slug": "udp",
+      "tests_hash": "d8f62e0f2210"
+    },
+    {
+      "slug": "tcp-header",
+      "tests_hash": "4797ba539432"
+    },
+    {
+      "slug": "three-way-handshake",
+      "tests_hash": "10d19b9c04d8"
+    },
+    {
+      "slug": "sliding-window",
+      "tests_hash": "048ed3d6f82f"
+    },
+    {
+      "slug": "retransmission",
+      "tests_hash": "066ecd584a3a"
+    },
+    {
+      "slug": "cumulative-ack",
+      "tests_hash": "f68adda1ee4a"
+    },
+    {
+      "slug": "congestion-control",
+      "tests_hash": "0e9f295239ca"
+    },
+    {
+      "slug": "production-stack",
+      "tests_hash": "1f7ca3bf734e"
+    },
+    {
+      "slug": "tcp-teardown",
+      "tests_hash": "97e5b911642f"
+    }
+  ]
+}
