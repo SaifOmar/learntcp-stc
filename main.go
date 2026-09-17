@@ -516,8 +516,98 @@ func ewmaRTT() {
 	}
 }
 
+// Step 2 of 5 · Exercise, graded on the executor
+//
+// TCP Cumulative ACK Queue
+// Maintain a TCP sender's retransmission queue under cumulative ACKs (RFC 793 §3.3). Read commands from stdin, one per line:
+//
+// SEND <seq> <len> — you just sent bytes [seq, seq+len). Append this interval to the outstanding list.
+// ACK <ack_no> — the peer cumulatively acknowledges every byte below ack_no. Drop any fully-acked interval; trim the leading edge of a partially-acked one to [ack_no, end).
+// QUEUE — print the outstanding intervals as <seq>-<end> items separated by single spaces, or EMPTY if there are none.
+// Only QUEUE produces output.
+//
+// Example input:
+//
+// SEND 0 100
+// SEND 100 100
+// ACK 100
+// QUEUE
+// ACK 200
+// QUEUE
+// Expected output:
+//
+// 100-200
+// EMPTY
+// The starter parses each line and gives you the outstanding list. Watch the partial-ack case: an ACK landing inside an interval trims it — do not drop the whole segment when only its leading edge was acknowledged.
+func tcpCumulativeACKQueue() {
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	var outstanding [][2]int
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, " ")
+		switch parts[0] {
+		case "SEND":
+			seq, _ := strconv.Atoi(parts[1])
+			length, _ := strconv.Atoi(parts[2])
+			outstanding = append(outstanding, [2]int{seq, seq + length})
+		case "ACK":
+			ack, _ := strconv.Atoi(parts[1])
+
+			var remaining [][2]int
+
+			for _, interval := range outstanding {
+				start := interval[0]
+				end := interval[1]
+
+				if ack >= end {
+					// Completely acknowledged → remove it.
+					continue
+				}
+
+				if ack > start {
+					// Partially acknowledged → trim the left side.
+					start = ack
+				}
+
+				remaining = append(remaining, [2]int{start, end})
+			}
+
+			outstanding = remaining
+		// case "ACK":
+		// 	ack, _ := strconv.Atoi(parts[1])
+		// 	for i, interval := range outstanding {
+		// 		if ack > interval[0] && ack < interval[1] {
+		// 			outstanding[i][0] = ack
+		// 		}
+		// 		if ack > interval[1] {
+		// 			continue
+		// 		}
+		// 		if ack == interval[1] {
+		// 			fmt.Printf("deleting %d-%d\n", interval[0], interval[1])
+		// 			outstanding = append(outstanding[:i], outstanding[i+1:]...)
+		// 		}
+		// 	}
+		case "QUEUE":
+			if len(outstanding) == 0 {
+				fmt.Println("EMPTY")
+			} else {
+				var values string
+				for _, interval := range outstanding {
+					val := fmt.Sprintf("%d-%d", interval[0], interval[1])
+					values = values + " " + val
+				}
+				fmt.Println(strings.TrimSpace(values))
+			}
+		}
+	}
+}
+
 func main() {
-	ewmaRTT()
+	tcpCumulativeACKQueue()
 }
 
 const (
