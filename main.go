@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -564,33 +565,16 @@ func tcpCumulativeACKQueue() {
 				end := interval[1]
 
 				if ack >= end {
-					// Completely acknowledged → remove it.
 					continue
 				}
 
 				if ack > start {
-					// Partially acknowledged → trim the left side.
 					start = ack
 				}
 
 				remaining = append(remaining, [2]int{start, end})
 			}
-
 			outstanding = remaining
-		// case "ACK":
-		// 	ack, _ := strconv.Atoi(parts[1])
-		// 	for i, interval := range outstanding {
-		// 		if ack > interval[0] && ack < interval[1] {
-		// 			outstanding[i][0] = ack
-		// 		}
-		// 		if ack > interval[1] {
-		// 			continue
-		// 		}
-		// 		if ack == interval[1] {
-		// 			fmt.Printf("deleting %d-%d\n", interval[0], interval[1])
-		// 			outstanding = append(outstanding[:i], outstanding[i+1:]...)
-		// 		}
-		// 	}
 		case "QUEUE":
 			if len(outstanding) == 0 {
 				fmt.Println("EMPTY")
@@ -606,8 +590,248 @@ func tcpCumulativeACKQueue() {
 	}
 }
 
+// Step 2 of 5 · Exercise, graded on the executor
+//
+// Slow Start
+// Simulate TCP slow start + congestion avoidance (RFC 5681).
+//
+// Initial state: cwnd = 1.0, ssthresh = 64.
+//
+// Per input line:
+//
+// ACK — apply ACK:
+// If cwnd < ssthresh (slow start): cwnd += 1.
+// Else (congestion avoidance): cwnd += 1 / cwnd.
+// Emit cwnd=<x> formatted to 4 decimal places.
+// LOSS — multiplicative decrease:
+// ssthresh = max(2, floor(cwnd / 2)).
+// cwnd = 1.
+// Emit loss: cwnd=1 ssthresh=<n>.
+// Example:
+//
+// INPUT:        OUTPUT:
+// ACK           cwnd=2.0000
+// ACK           cwnd=3.0000
+// LOSS          loss: cwnd=1 ssthresh=2
+// ACK           cwnd=2.0000
+func slowStart() {
+	cwnd := 1.0
+	ssthresh := 64.0
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			continue
+		}
+		switch line {
+		case "ACK":
+			if cwnd < ssthresh {
+				cwnd += 1
+			} else {
+				cwnd += 1 / cwnd
+			}
+			fmt.Printf("cwnd=%.4f\n", cwnd)
+		case "LOSS":
+			ssthresh = math.Max(2, math.Floor(cwnd/2))
+			cwnd = 1
+			fmt.Printf("loss: cwnd=%d ssthresh=%d\n", int(cwnd), int(ssthresh))
+		default:
+			fmt.Println("Unknown command")
+		}
+	}
+}
+
+// Connection Lifetime
+// Simulate a partial TCP connection state machine (RFC 793 §3.2).
+//
+// State starts at CLOSED. Each input line is either EVENT <name> (apply transition) or STATE (emit current state without changing it).
+//
+// Transitions:
+//
+// from	event	to
+// CLOSED	active_open	SYN_SENT
+// SYN_SENT	recv_synack	ESTABLISHED
+// CLOSED	passive_open	LISTEN
+// LISTEN	recv_syn	SYN_RCVD
+// SYN_RCVD	recv_ack	ESTABLISHED
+// ESTABLISHED	close	FIN_WAIT_1
+// FIN_WAIT_1	recv_ack	FIN_WAIT_2
+// FIN_WAIT_2	recv_fin	TIME_WAIT
+// TIME_WAIT	timeout	CLOSED
+// ESTABLISHED	recv_fin	CLOSE_WAIT
+// CLOSE_WAIT	close	LAST_ACK
+// LAST_ACK	recv_ack	CLOSED
+// Unknown (state, event) pairs stay in the current state.
+//
+// Print state after each event/state line.
+func connectionLifetime() {
+	type TCPState string
+	const (
+		CLOSED      TCPState = "CLOSED"
+		LISTEN      TCPState = "LISTEN"
+		SYN_SENT    TCPState = "SYN_SENT"
+		SYN_RCVD    TCPState = "SYN_RCVD"
+		ESTABLISHED TCPState = "ESTABLISHED"
+		FIN_WAIT_1  TCPState = "FIN_WAIT_1"
+		FIN_WAIT_2  TCPState = "FIN_WAIT_2"
+		CLOSE_WAIT  TCPState = "CLOSE_WAIT"
+		LAST_ACK    TCPState = "LAST_ACK"
+		TIME_WAIT   TCPState = "TIME_WAIT"
+	)
+	var transitions = map[TCPState]map[string]TCPState{
+		ESTABLISHED: {
+			"recv_fin": CLOSE_WAIT,
+			"close":    FIN_WAIT_1,
+		},
+
+		FIN_WAIT_1: {
+			"recv_ack": FIN_WAIT_2,
+		},
+
+		FIN_WAIT_2: {
+			"recv_fin": TIME_WAIT,
+		},
+		CLOSE_WAIT: {
+			"close": LAST_ACK,
+		},
+		LAST_ACK: {
+			"recv_ack": CLOSED,
+		},
+		TIME_WAIT: {
+			"timeout": CLOSED,
+		},
+		SYN_SENT: {
+			"recv_synack": ESTABLISHED,
+		},
+		SYN_RCVD: {
+			"recv_ack": ESTABLISHED,
+		},
+		LISTEN: {
+			"active_open":  SYN_SENT,
+			"passive_open": LISTEN,
+			"recv_syn":     SYN_RCVD,
+		},
+		CLOSED: {
+			"active_open":  SYN_SENT,
+			"passive_open": LISTEN,
+		},
+	}
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	state := CLOSED
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, " ")
+		switch parts[0] {
+		case "EVENT":
+			event := parts[1]
+			if transitions[state][event] == "" {
+			} else {
+				state = transitions[state][event]
+			}
+			fmt.Println(state)
+		case "STATE":
+			fmt.Println(state)
+		}
+	}
+}
+
+// Step 2 of 5 · Exercise, graded on the executor
+//
+// TCP Teardown State Machine
+// Drive the TCP teardown state machine for one side of a connection. Start in ESTABLISHED.
+//
+// Transitions (RFC 793 §3.5):
+//
+// from	event	to
+// ESTABLISHED	close	FIN_WAIT_1
+// ESTABLISHED	recv_fin	CLOSE_WAIT
+// FIN_WAIT_1	recv_ack	FIN_WAIT_2
+// FIN_WAIT_1	recv_fin	CLOSING
+// FIN_WAIT_2	recv_fin	TIME_WAIT
+// CLOSING	recv_ack	TIME_WAIT
+// TIME_WAIT	timeout	CLOSED
+// CLOSE_WAIT	close	LAST_ACK
+// LAST_ACK	recv_ack	CLOSED
+// Inputs:
+//
+// EVENT <name> — apply transition (unknown pair stays in the current state).
+// STATE — print current state without changing it.
+// Print state after each line.
+//
+// Example:
+//
+// INPUT:                  OUTPUT:
+// EVENT close             FIN_WAIT_1
+// EVENT recv_ack          FIN_WAIT_2
+// EVENT recv_fin          TIME_WAIT
+// EVENT timeout           CLOSED
+// STATE                   CLOSED
+func tcpTeardown() {
+	type TCPState string
+	const (
+		ESTABLISHED TCPState = "ESTABLISHED"
+		FIN_WAIT_1  TCPState = "FIN_WAIT_1"
+		FIN_WAIT_2  TCPState = "FIN_WAIT_2"
+		CLOSING     TCPState = "CLOSING"
+		CLOSE_WAIT  TCPState = "CLOSE_WAIT"
+		LAST_ACK    TCPState = "LAST_ACK"
+		TIME_WAIT   TCPState = "TIME_WAIT"
+		CLOSED      TCPState = "CLOSED"
+	)
+	var transitions = map[TCPState]map[string]TCPState{
+		ESTABLISHED: {
+			"close":    FIN_WAIT_1,
+			"recv_fin": CLOSE_WAIT,
+		},
+		FIN_WAIT_1: {
+			"recv_ack": FIN_WAIT_2,
+			"recv_fin": CLOSING,
+		},
+		FIN_WAIT_2: {
+			"recv_fin": TIME_WAIT,
+		},
+		CLOSING: {
+			"recv_ack": TIME_WAIT,
+		},
+		TIME_WAIT: {
+			"timeout": CLOSED,
+		},
+		CLOSE_WAIT: {
+			"close": LAST_ACK,
+		},
+		LAST_ACK: {
+			"recv_ack": CLOSED,
+		},
+	}
+	sc := bufio.NewScanner(os.Stdin)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	state := ESTABLISHED
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, " ")
+		switch parts[0] {
+		case "EVENT":
+			event := parts[1]
+			if transitions[state][event] == "" {
+			} else {
+				state = transitions[state][event]
+			}
+			fmt.Println(state)
+		case "STATE":
+			fmt.Println(state)
+		}
+	}
+}
 func main() {
-	tcpCumulativeACKQueue()
+	tcpTeardown()
 }
 
 const (
